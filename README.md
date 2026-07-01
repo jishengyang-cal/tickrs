@@ -36,6 +36,18 @@ brew tap tarkah/tickrs
 brew install tickrs
 ```
 
+## Managed Trading Host Defaults
+
+The services Zellij wrapper registers the standard intraday tickrs board with 20 symbols:
+SPY, QQQ, IWM, VIX, TLT, DXY, XLK, SMH, XLY, XLC, XLF, XLE, NVDA, AAPL,
+MSFT, AMZN, META, GOOGL, TSLA, and AVGO.
+
+When `TICKRS_DATABENTO_LIVE_URL` is configured, current prices are overlaid from
+the local Databento live bridge first. If Databento is unavailable or a row is
+not live, tickrs falls back to its default Yahoo Finance source. `VIX` and `DXY`
+remain the registered UI symbols; Yahoo fallback requests use `^VIX` and
+`DX-Y.NYB` respectively.
+
 ## Config File
 
 See [wiki entry](https://github.com/tarkah/tickrs/wiki/Config-file)

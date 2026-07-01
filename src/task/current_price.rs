@@ -31,6 +31,12 @@ impl AsyncTask for CurrentPrice {
         Box::pin(async move {
             let symbol = input.as_ref();
 
+            if let Ok(row) = crate::CLIENT.get_databento_live_row(symbol).await {
+                if let Some(price) = row.live_price() {
+                    return Some((price, None, row.volume_string()));
+                }
+            }
+
             let crumb = YAHOO_CRUMB.read().await.clone();
 
             if let Some(crumb) = crumb {

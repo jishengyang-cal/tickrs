@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, env};
 
 use anyhow::{bail, Context, Result};
 use futures::AsyncReadExt;
 use http::{header, Request, Uri};
 use isahc::{AsyncReadResponseExt, HttpClient};
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Deserialize};
 
 use crate::model::{Chart, ChartData, Company, CompanyData, CrumbData, Options, OptionsHeader};
 use crate::{Interval, Range};
@@ -15,9 +15,66 @@ pub struct Client {
     base: String,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct DatabentoLiveRow {
+    pub symbol: String,
+    pub price: Option<f64>,
+    pub size: Option<u64>,
+    pub bid_price: Option<f64>,
+    pub bid_size: Option<u64>,
+    pub ask_price: Option<f64>,
+    pub ask_size: Option<u64>,
+    pub status: Option<String>,
+}
+
+impl DatabentoLiveRow {
+    pub fn live_price(&self) -> Option<f64> {
+        if self.status.as_deref() != Some("live") {
+            return None;
+        }
+        self.price
+            .or_else(|| match (self.bid_price, self.ask_price) {
+                (Some(bid), Some(ask)) if bid > 0.0 && ask > 0.0 => Some((bid + ask) / 2.0),
+                _ => None,
+            })
+    }
+
+    pub fn volume_string(&self) -> String {
+        self.size
+            .or(self.bid_size)
+            .or(self.ask_size)
+            .map(|value| value.to_string())
+            .unwrap_or_default()
+    }
+}
+
 impl Client {
     pub fn new() -> Self {
         Client::default()
+    }
+
+    pub fn yahoo_symbol(symbol: &str) -> String {
+        match symbol.trim().to_uppercase().as_str() {
+            "VIX" => "^VIX".to_string(),
+            "DXY" => "DX-Y.NYB".to_string(),
+            other => other.to_string(),
+        }
+    }
+
+    fn databento_symbol(symbol: &str) -> String {
+        let symbol = symbol.trim().to_uppercase();
+        match symbol.as_str() {
+            "^VIX" => "VIX".to_string(),
+            "DX-Y.NYB" => "DXY".to_string(),
+            other => other.trim_start_matches('^').to_string(),
+        }
+    }
+
+    fn databento_enabled() -> bool {
+        !matches!(
+            env::var("TICKRS_DATABENTO_ENABLED").as_deref(),
+            Ok("0") | Ok("false") | Ok("FALSE") | Ok("no") | Ok("NO") | Ok("off") | Ok("OFF")
+        )
     }
 
     fn get_url(
@@ -61,6 +118,42 @@ impl Client {
         Ok(response)
     }
 
+    pub async fn get_databento_live_row(&self, symbol: &str) -> Result<DatabentoLiveRow> {
+        if !Self::databento_enabled() {
+            bail!("Databento live overlay is disabled");
+        }
+
+        let base = env::var("TICKRS_DATABENTO_LIVE_URL")
+            .or_else(|_| env::var("DATABENTO_LIVE_URL"))
+            .unwrap_or_else(|_| "http://127.0.0.1:6910/live/get_ws_data".to_string());
+        if base.trim().is_empty() {
+            bail!("Databento live URL is empty");
+        }
+
+        let request_symbol = Self::databento_symbol(symbol);
+        let mut params = HashMap::new();
+        params.insert("symbol", request_symbol.clone());
+        params.insert(
+            "dataset",
+            env::var("TICKRS_DATABENTO_DATASET").unwrap_or_else(|_| "EQUS.MINI".to_string()),
+        );
+        params.insert(
+            "live_schema",
+            env::var("TICKRS_DATABENTO_LIVE_SCHEMA").unwrap_or_else(|_| "mbp-1".to_string()),
+        );
+        let separator = if base.contains('?') { "&" } else { "?" };
+        let url = format!(
+            "{}{}{}",
+            base,
+            separator,
+            serde_urlencoded::to_string(params)?
+        );
+        let rows: Vec<DatabentoLiveRow> = self.get(url.parse::<Uri>()?, None).await?;
+        rows.into_iter()
+            .find(|row| row.symbol.eq_ignore_ascii_case(&request_symbol))
+            .with_context(|| format!("No Databento live row for {}", symbol))
+    }
+
     pub async fn get_chart_data(
         &self,
         symbol: &str,
@@ -68,6 +161,7 @@ impl Client {
         range: Range,
         include_pre_post: bool,
     ) -> Result<ChartData> {
+        let request_symbol = Self::yahoo_symbol(symbol);
         let mut params = HashMap::new();
         params.insert("interval", format!("{}", interval));
         params.insert("range", format!("{}", range));
@@ -78,7 +172,7 @@ impl Client {
 
         let url = self.get_url(
             Version::V8,
-            &format!("finance/chart/{}", symbol),
+            &format!("finance/chart/{}", request_symbol),
             Some(params),
         )?;
 
@@ -106,13 +200,14 @@ impl Client {
         symbol: &str,
         crumb_data: CrumbData,
     ) -> Result<CompanyData> {
+        let request_symbol = Self::yahoo_symbol(symbol);
         let mut params = HashMap::new();
         params.insert("modules", "price,assetProfile".to_string());
         params.insert("crumb", crumb_data.crumb);
 
         let url = self.get_url(
             Version::V10,
-            &format!("finance/quoteSummary/{}", symbol),
+            &format!("finance/quoteSummary/{}", request_symbol),
             Some(params),
         )?;
 
