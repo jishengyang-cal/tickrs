@@ -23,6 +23,7 @@ mod draw;
 mod event;
 mod opts;
 mod portfolio;
+mod quote_stream;
 mod service;
 mod task;
 mod theme;
@@ -58,6 +59,7 @@ fn main() {
     setup_panic_hook();
     setup_terminal();
     set_crumb();
+    quote_stream::start_from_env();
 
     let request_redraw = REDRAW_REQUEST.0.clone();
     let data_received = DATA_RECEIVED.1.clone();

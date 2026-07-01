@@ -1516,6 +1516,7 @@ dependencies = [
  "ratatui",
  "rclite",
  "serde",
+ "serde_json",
  "serde_yaml",
  "structopt",
  "tickrs-api",

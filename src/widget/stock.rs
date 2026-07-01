@@ -14,6 +14,7 @@ use super::{block, CachableWidget, CacheState, OptionsState};
 use crate::api::model::{ChartMeta, CompanyData};
 use crate::common::*;
 use crate::draw::{add_padding, PaddingDirection};
+use crate::quote_stream;
 use crate::service::{self, Service};
 use crate::theme::style;
 use crate::{
@@ -238,6 +239,14 @@ impl StockState {
                 service::stock::Update::CompanyData(data) => {
                     self.profile = Some(*data);
                 }
+            }
+        }
+
+        if let Some((regular, volume)) = quote_stream::latest_price(&self.symbol) {
+            self.current_regular_price = regular;
+            self.current_post_price = None;
+            if let Some(volume) = volume {
+                self.reg_mkt_volume = Some(volume);
             }
         }
     }

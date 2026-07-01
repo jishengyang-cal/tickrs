@@ -33,6 +33,7 @@ lazy_static = "1.4"
 parking_lot = "0.12.1"
 rclite = "0.1.5"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 serde_yaml = "0.9"
 structopt = "0.3"
 tickrs-api = { path = "api/", version = "0.15.0" }
